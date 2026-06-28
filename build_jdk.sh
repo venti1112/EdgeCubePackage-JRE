@@ -31,7 +31,24 @@ AUTOCONF_EXTRA_ARGS+="OBJCOPY=$OBJCOPY \
 
 export BOOT_JDK=$PWD/jdk-20
 export CFLAGS+=" -DANDROID"
-export LDFLAGS+=" -L$PWD/dummy_libs" 
+export LDFLAGS+=" -L$PWD/dummy_libs"
+
+# Detect LLD 17+ and add --undefined-version to suppress strict version-script errors.
+# LLD 17+ (NDK 25+) changed the default to error on undefined version-script symbols
+# (e.g. OpenJDK's libjvm.so mapfile references vtable symbols for function-local closure
+# classes that the compiler does not emit). LLD < 17 (e.g. NDK r21's LLD 9) treats these
+# as warnings by default. The --undefined-version flag restores the old permissive
+# behavior on LLD 17+. We gate on the detected major version so the flag is only added
+# when needed. See FreeBSD Bug 274106 for the same issue.
+if [[ -x "$TOOLCHAIN/bin/ld.lld" ]]; then
+  LLD_MAJOR=$("$TOOLCHAIN/bin/ld.lld" --version 2>&1 | head -n1 | sed -n 's/^LLD \([0-9][0-9]*\)\..*/\1/p')
+  if [[ -n "$LLD_MAJOR" && "$LLD_MAJOR" -ge 17 ]]; then
+    export LDFLAGS+=" -Wl,--undefined-version"
+    echo "[build_jdk] LLD $LLD_MAJOR detected; appending -Wl,--undefined-version to LDFLAGS"
+  else
+    echo "[build_jdk] LLD ${LLD_MAJOR:-unknown} detected; not adding --undefined-version"
+  fi
+fi
 
 # Create dummy libraries so we won't have to remove them in OpenJDK makefiles
 mkdir -p dummy_libs
