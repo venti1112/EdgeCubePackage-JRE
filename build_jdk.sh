@@ -44,6 +44,28 @@ cd openjdk
 git reset --hard
 git apply --reject --whitespace=fix ../patches/jdk11u_android.diff || echo "git apply failed (Android patch set)"
 
+# Add iconv extern declarations for Android (tinyiconv provides the implementation
+# but Bionic only declares the functions for __ANDROID_API__ >= 28)
+python3 << 'PYEOF'
+import os
+files = [
+    "src/java.instrument/unix/native/libinstrument/EncodingSupport_md.c",
+    "src/jdk.jdwp.agent/share/native/libjdwp/utf_util.c",
+]
+decl = """#ifdef __ANDROID__
+extern iconv_t iconv_open(const char*, const char*);
+extern size_t iconv(iconv_t, char**, size_t*, char**, size_t*);
+extern int iconv_close(iconv_t);
+#endif
+"""
+for f in files:
+    if os.path.exists(f) and "extern iconv_t iconv_open" not in open(f).read():
+        content = open(f).read()
+        content = content.replace("#include <iconv.h>\n", "#include <iconv.h>\n" + decl, 1)
+        open(f, "w").write(content)
+        print("[build_jdk] Added iconv extern declarations to " + f)
+PYEOF
+
 bash ./configure \
     --with-boot-jdk=$BOOT_JDK \
     --openjdk-target=$TARGET \
