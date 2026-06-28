@@ -141,6 +141,59 @@ if os.path.exists(memnode):
         print('[build_jdk] coalesce_subword_stores already guarded in ' + memnode)
     else:
         print('[build_jdk] WARNING: coalesce_subword_stores pattern not found in ' + memnode)
+
+# 5. Revert toolchain.m4 BUILD_CC changes: the Android patch changes BUILD_CC
+#    lookup from "cc gcc" to "clang cc gcc", causing the BUILD JDK to be
+#    compiled with clang. Clang doesn't support -fno-lifetime-dse, which is
+#    critical for correct HotSpot operation (prevents the compiler from
+#    optimizing away stores to object headers during construction).
+#    Without it, the BUILD JDK crashes with SIGSEGV in
+#    ObjectSynchronizer::inflate during jmod creation.
+#    The patch also skips BUILD compiler version extraction on linux, which
+#    can cause missing version-specific workarounds.
+toolchain_m4 = 'make/autoconf/toolchain.m4'
+if os.path.exists(toolchain_m4):
+    content = open(toolchain_m4).read()
+    changed = False
+
+    # Revert BUILD_CC/BUILD_CXX lookup to prefer gcc (original behavior)
+    old_cc = 'UTIL_REQUIRE_PROGS(BUILD_CC, clang cc gcc)'
+    new_cc = 'UTIL_REQUIRE_PROGS(BUILD_CC, cc gcc)'
+    if old_cc in content:
+        content = content.replace(old_cc, new_cc, 1)
+        changed = True
+        print('[build_jdk] Reverted BUILD_CC lookup to "cc gcc" in ' + toolchain_m4)
+
+    old_cxx = 'UTIL_REQUIRE_PROGS(BUILD_CXX, clang++ CC g++)'
+    new_cxx = 'UTIL_REQUIRE_PROGS(BUILD_CXX, CC g++)'
+    if old_cxx in content:
+        content = content.replace(old_cxx, new_cxx, 1)
+        changed = True
+        print('[build_jdk] Reverted BUILD_CXX lookup to "CC g++" in ' + toolchain_m4)
+
+    # Restore BUILD compiler version extraction (patch skips it on linux)
+    old_ver = """    # xandroid
+    if test "x$OPENJDK_BUILD_OS" != "xlinux"; then
+      TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CC, [BuildC])
+      TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CXX, [BuildC++])
+      TOOLCHAIN_PREPARE_FOR_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_], [build ])
+      TOOLCHAIN_EXTRACT_LD_VERSION(BUILD_LD, [build linker])
+      TOOLCHAIN_PREPARE_FOR_LD_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_])
+    fi"""
+    new_ver = """    TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CC, [BuildC])
+    TOOLCHAIN_EXTRACT_COMPILER_VERSION(BUILD_CXX, [BuildC++])
+    TOOLCHAIN_PREPARE_FOR_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_])
+    TOOLCHAIN_EXTRACT_LD_VERSION(BUILD_LD, [build linker])
+    TOOLCHAIN_PREPARE_FOR_LD_VERSION_COMPARISONS([BUILD_], [OPENJDK_BUILD_])"""
+    if old_ver in content:
+        content = content.replace(old_ver, new_ver, 1)
+        changed = True
+        print('[build_jdk] Restored BUILD compiler version extraction in ' + toolchain_m4)
+
+    if changed:
+        open(toolchain_m4, 'w').write(content)
+    else:
+        print('[build_jdk] toolchain.m4 BUILD_CC changes already reverted or not found')
 PYEOF
 
 bash ./configure \
@@ -184,11 +237,9 @@ sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
 sed -i 's/^VERSION_STRING[ ]*[:?+]*=.*/VERSION_STRING := $(VERSION_NUMBER)/' spec.gmk
 echo "[build_jdk] Cleared VERSION_PRE/VERSION_OPT/VERSION_STRING in $(pwd)/spec.gmk"
 
-# Disable C2 for the BUILD JDK to work around a crash in
-# ObjectSynchronizer::inflate caused by the coalesce_subword_stores patch
-# affecting the BUILD JDK (linux-amd64 host) during jmod creation.
-# JAVA_TOOL_OPTIONS is picked up by all Java processes, including the
-# BUILD JDK that runs during `make images`.
+# Safety measure: disable C2 for the BUILD JDK. The primary fix is using gcc
+# for BUILD_CC (see toolchain.m4 reversion above) which enables -fno-lifetime-dse.
+# This C2 disable is kept as an extra safety net.
 export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -XX:TieredStopAtLevel=1"
 echo "[build_jdk] Set JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS"
 
