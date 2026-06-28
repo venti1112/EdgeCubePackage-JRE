@@ -26,10 +26,7 @@ platform_args="--with-toolchain-type=gcc \
 AUTOCONF_x11arg="--x-includes=$ANDROID_INCLUDE/X11"
 
 export BOOT_JDK=$PWD/jdk-10.0.2
-# Note: -DANDROID is NOT needed here. The patch defines ANDROID from __ANDROID__
-# (auto-defined by NDK) in globalDefinitions_gcc.hpp. Adding -DANDROID here
-# would also define it for the build JDK (compiled for linux-amd64 host),
-# activating Android-specific code paths in the build JDK and causing crashes.
+export CFLAGS+=" -DANDROID"
 export LDFLAGS+=" -L$PWD/dummy_libs"
 
 # Create dummy libraries so we won't have to remove them in OpenJDK makefiles
