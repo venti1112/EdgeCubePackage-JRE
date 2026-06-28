@@ -184,6 +184,14 @@ sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
 sed -i 's/^VERSION_STRING[ ]*[:?+]*=.*/VERSION_STRING := $(VERSION_NUMBER)/' spec.gmk
 echo "[build_jdk] Cleared VERSION_PRE/VERSION_OPT/VERSION_STRING in $(pwd)/spec.gmk"
 
+# Disable C2 for the BUILD JDK to work around a crash in
+# ObjectSynchronizer::inflate caused by the coalesce_subword_stores patch
+# affecting the BUILD JDK (linux-amd64 host) during jmod creation.
+# JAVA_TOOL_OPTIONS is picked up by all Java processes, including the
+# BUILD JDK that runs during `make images`.
+export JAVA_TOOL_OPTIONS="${JAVA_TOOL_OPTIONS:-} -XX:TieredStopAtLevel=1"
+echo "[build_jdk] Set JAVA_TOOL_OPTIONS=$JAVA_TOOL_OPTIONS"
+
 make JOBS=$jobs images || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
