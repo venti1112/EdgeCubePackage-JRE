@@ -61,7 +61,6 @@ bash ./configure \
     --with-devkit=$TOOLCHAIN \
     --with-native-debug-symbols=external \
     --with-debug-level=$JDK_DEBUG_LEVEL \
-    --with-version-opt= \
     --with-fontconfig-include=$ANDROID_INCLUDE \
     $AUTOCONF_x11arg $AUTOCONF_EXTRA_ARGS \
     --x-libraries=/usr/lib \
@@ -76,9 +75,14 @@ fi
 jobs=4
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
-make JOBS=$jobs images || \
+
+# Clear VERSION_OPT in spec.gmk to remove "-internal" suffix from JAVA_RUNTIME_VERSION.
+sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
+echo "[build_jdk] Cleared VERSION_OPT in $(pwd)/spec.gmk"
+
+make JOBS=$jobs images VERSION_OPT= || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "Build failure, exited with code $error_code. Trying again."
-  make JOBS=$jobs images
+  make JOBS=$jobs images VERSION_OPT=
 fi
