@@ -61,8 +61,17 @@ jobs:
     - name: Repack JRE
       run: bash "repack_jre.sh" $GITHUB_WORKSPACE/fcl $GITHUB_WORKSPACE/fcl/jre11-multiarch
 
-    - name: Upload artifact
+    - name: Pack ecpkg
+      run: bash "pack_ecpkg.sh" $GITHUB_WORKSPACE/fcl/jre11-multiarch $GITHUB_WORKSPACE/fcl/jre11-ecpkg
+
+    - name: Upload multiarch artifact
       uses: actions/upload-artifact@v4
       with:
           name: jre11-multiarch
           path: fcl/jre11-multiarch/*
+
+    - name: Upload ecpkg packages
+      uses: actions/upload-artifact@v4
+      with:
+          name: jre11-ecpkg
+          path: fcl/jre11-ecpkg/*.ecpkg
