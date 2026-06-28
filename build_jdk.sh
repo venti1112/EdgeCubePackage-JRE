@@ -45,6 +45,9 @@ if [[ "$TARGET_JDK" == "x86" ]]; then
   git apply --reject --whitespace=fix ../patches/jdk8u_android_page_trap_fix.diff || echo "git apply failed (x86 page trap fix)"
 fi
 
+# Disable GCC < 5 check on aarch64 (NDK r10e uses GCC 4.9, JDK-8360869)
+sed -i 's/.*as_fn_error.*GCC < 5 may incorrectly.*/: # skip GCC version check/' configure
+
 bash ./configure \
     --openjdk-target=$TARGET_PHYS \
     --with-extra-cflags="$CFLAGS" \
