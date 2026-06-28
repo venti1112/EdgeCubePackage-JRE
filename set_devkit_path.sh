@@ -25,13 +25,15 @@ fi
 export JVM_PLATFORM=linux
 # Set NDK
 export API=21
-if [[ -z "$ANDROID_NDK_ROOT" ]]; then
-  export NDK=$PWD/android-ndk-$NDK_VERSION
-  export ANDROID_NDK_ROOT=$NDK
-else
-  export NDK_USE_EXISTING=1
-  export NDK=$ANDROID_NDK_ROOT
-fi
+# Always use the locally-extracted NDK (android-ndk-r21/). Ignore any
+# pre-installed NDK pointed to by ANDROID_NDK_ROOT — e.g. GitHub Actions
+# runners ship NDK 27 at /usr/local/lib/android/sdk/ndk/... whose LLD 18+
+# errors on undefined version-script symbols (OpenJDK's mapfile references
+# vtables of function-local closures that the compiler does not emit),
+# while NDK r21's LLD 9 treats them as warnings. See:
+# https://bugs.freebsd.org/bugzilla/show_bug.cgi?id=274106
+export NDK=$PWD/android-ndk-$NDK_VERSION
+export ANDROID_NDK_ROOT=$NDK
 export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
 
 export ANDROID_INCLUDE=$TOOLCHAIN/sysroot/usr/include
