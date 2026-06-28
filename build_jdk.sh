@@ -101,6 +101,28 @@ for gmk, anchor, line, check in build_fixes:
                 print("[build_jdk] Added to " + gmk + ": " + line.strip())
             else:
                 print("[build_jdk] WARNING: anchor not found in " + gmk + ": " + anchor.strip())
+
+# 3. Add CXXFLAGS to BUILD_LIBDT_SOCKET (tinyiconv's iconv.cpp is compiled
+#    as part of libdt_socket and needs C++ flags to avoid -std=c99 error).
+#    This must be checked separately because CXXFLAGS already exists in
+#    BUILD_LIBJDWP, so the file-wide check above would skip it.
+gmk = 'make/lib/Lib-jdk.jdwp.agent.gmk'
+if os.path.exists(gmk):
+    content = open(gmk).read()
+    dt_start = content.find('BUILD_LIBDT_SOCKET')
+    dt_end = content.find('))', dt_start)
+    if dt_start != -1 and dt_end != -1:
+        dt_block = content[dt_start:dt_end]
+        if 'CXXFLAGS' not in dt_block:
+            anchor = '$(LIBDT_SOCKET_CPPFLAGS), \\'
+            if anchor in dt_block:
+                content = content.replace(anchor, anchor + '\n    CXXFLAGS := $(CXXFLAGS_JDKLIB), \\', 1)
+                open(gmk, 'w').write(content)
+                print('[build_jdk] Added CXXFLAGS to BUILD_LIBDT_SOCKET in ' + gmk)
+            else:
+                print('[build_jdk] WARNING: BUILD_LIBDT_SOCKET anchor not found in ' + gmk)
+        else:
+            print('[build_jdk] BUILD_LIBDT_SOCKET already has CXXFLAGS in ' + gmk)
 PYEOF
 
 bash ./configure \
@@ -120,6 +142,8 @@ bash ./configure \
     --with-native-debug-symbols=external \
     --with-debug-level=$JDK_DEBUG_LEVEL \
     --with-fontconfig-include=$ANDROID_INCLUDE \
+    --with-version-pre= \
+    --with-version-opt= \
     $AUTOCONF_x11arg $AUTOCONF_EXTRA_ARGS \
     --x-libraries=/usr/lib \
         $platform_args || \
@@ -134,13 +158,17 @@ jobs=4
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-normal-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
 
-# Clear VERSION_OPT in spec.gmk to remove "-internal" suffix from JAVA_RUNTIME_VERSION.
+# Clear VERSION_PRE and VERSION_OPT in spec.gmk as a backup in case the
+# --with-version-pre=/--with-version-opt= configure options were not applied.
+# VERSION_STRING is pre-computed during configure, so also fix it directly.
+sed -i 's/^VERSION_PRE[ ]*[:?+]*=.*/VERSION_PRE :=/' spec.gmk
 sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
-echo "[build_jdk] Cleared VERSION_OPT in $(pwd)/spec.gmk"
+sed -i 's/^VERSION_STRING[ ]*[:?+]*=.*/VERSION_STRING := $(VERSION_NUMBER)/' spec.gmk
+echo "[build_jdk] Cleared VERSION_PRE/VERSION_OPT/VERSION_STRING in $(pwd)/spec.gmk"
 
-make JOBS=$jobs images VERSION_OPT= || \
+make JOBS=$jobs images || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "Build failure, exited with code $error_code. Trying again."
-  make JOBS=$jobs images VERSION_OPT=
+  make JOBS=$jobs images
 fi
