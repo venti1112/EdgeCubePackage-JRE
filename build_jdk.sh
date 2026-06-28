@@ -75,6 +75,104 @@ for cfg_file in ['configure', 'common/autoconf/generated-configure.sh']:
     print("[build_jdk] Disabled GCC < 5 check in " + cfg_file + " (" + str(modified) + " line(s))")
 PYEOF
 
+# Fix JRE8 aarch64 runtime crash on Android: "Field too big for insn"
+# Root cause: Android ASLR places CodeCache ~156MB from libjvm.so, exceeding
+# the ±128MB range of the AArch64 B (unconditional branch) instruction.
+# JDK 8 lacks far-branch trampolines (added in JDK 11+ via MacroAssembler::far_branch).
+# Fix: When no specific address is requested, try to mmap near libjvm.so
+# so branch instructions from CodeCache can reach libjvm.so functions.
+# Only applies to aarch64 (the crash is aarch64-specific; other archs are unaffected).
+if [[ "$TARGET_JDK" == "aarch64" ]]; then
+python3 << 'PYEOF'
+import os
+
+filepath = 'hotspot/src/os/linux/vm/os_linux.cpp'
+if not os.path.exists(filepath):
+    print('[build_jdk] WARNING: ' + filepath + ' not found')
+else:
+    with open(filepath, 'r') as f:
+        content = f.read()
+
+    if 'get_libjvm_base' in content:
+        print('[build_jdk] CodeCache near-jvm fix already applied in ' + filepath)
+    else:
+        # 1. Add get_libjvm_base() helper before anon_mmap.
+        #    Uses dladdr on itself to find libjvm.so's base address.
+        #    __attribute__((noinline)) ensures the function has a distinct address.
+        helper = """
+// [EdgeCube] Get libjvm.so base address for CodeCache placement on Android aarch64.
+// JDK 8 lacks far-branch trampolines; CodeCache must be within +/-128MB of
+// libjvm.so for the B (unconditional branch) instruction to work.
+__attribute__((noinline)) static void* get_libjvm_base() {
+  Dl_info info;
+  if (dladdr((void*)&get_libjvm_base, &info) && info.dli_fbase) {
+    return info.dli_fbase;
+  }
+  return NULL;
+}
+
+"""
+        anchor1 = 'static char* anon_mmap(char* requested_addr, size_t bytes, bool fixed) {'
+        if anchor1 in content:
+            content = content.replace(anchor1, helper + anchor1, 1)
+        else:
+            print('[build_jdk] WARNING: anon_mmap anchor not found in ' + filepath)
+
+        # 2. Add hint logic inside anon_mmap, before the mmap call.
+        #    When !fixed && requested_addr == NULL, try mmap near libjvm.so.
+        anchor2 = """  // Map reserved/uncommitted pages PROT_NONE so we fail early if we
+  // touch an uncommitted page. Otherwise, the read/write might
+  // succeed if we have enough swap space to back the physical page.
+  addr = (char*)::mmap(requested_addr, bytes, PROT_NONE,
+                       flags, -1, 0);"""
+
+        hint_code = """#ifdef __ANDROID__
+  // [EdgeCube] Android aarch64: try to allocate near libjvm.so when no
+  // specific address is requested. This keeps CodeCache within branch range.
+  if (!fixed && requested_addr == NULL) {
+    void* jvm_base_ptr = get_libjvm_base();
+    if (jvm_base_ptr != NULL) {
+      uintptr_t jvm_base = (uintptr_t)jvm_base_ptr;
+      // Try 32MB below libjvm.so (well within +/-128MB B instruction range)
+      uintptr_t hint = (jvm_base > 32 * 1024 * 1024)
+          ? (jvm_base - 32 * 1024 * 1024) : jvm_base;
+      hint &= ~((uintptr_t)os::Linux::page_size() - 1); // page-align
+      addr = (char*)::mmap((char*)hint, bytes, PROT_NONE, flags, -1, 0);
+      if (addr != MAP_FAILED) {
+        uintptr_t distance = (uintptr_t)addr > jvm_base
+            ? (uintptr_t)addr - jvm_base
+            : jvm_base - (uintptr_t)addr;
+        if (distance < 120 * 1024 * 1024) {
+          if ((address)addr + bytes > _highest_vm_reserved_address) {
+            _highest_vm_reserved_address = (address)addr + bytes;
+          }
+          return addr;
+        }
+        // Too far from libjvm.so, unmap and fall through to default
+        ::munmap(addr, bytes);
+      }
+    }
+  }
+#endif
+
+  // Map reserved/uncommitted pages PROT_NONE so we fail early if we
+  // touch an uncommitted page. Otherwise, the read/write might
+  // succeed if we have enough swap space to back the physical page.
+  addr = (char*)::mmap(requested_addr, bytes, PROT_NONE,
+                       flags, -1, 0);"""
+
+        if anchor2 in content:
+            content = content.replace(anchor2, hint_code, 1)
+            with open(filepath, 'w') as f:
+                f.write(content)
+            print('[build_jdk] Applied CodeCache near-jvm fix to ' + filepath)
+        else:
+            with open(filepath, 'w') as f:
+                f.write(content)
+            print('[build_jdk] WARNING: mmap anchor not found, wrote helper only to ' + filepath)
+PYEOF
+fi
+
 bash ./configure \
     --openjdk-target=$TARGET_PHYS \
     --with-extra-cflags="$CFLAGS" \
