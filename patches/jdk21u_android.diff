@@ -2523,4 +2523,19 @@ index 912e4f622..27fd26607 100644
  JDK_RC_PLATFORM_NAME=Platform
  COMPANY_NAME=N/A
  HOTSPOT_VM_DISTRO="OpenJDK"
+diff --git a/src/java.base/unix/native/libjava/ProcessImpl_md.c b/src/java.base/unix/native/libjava/ProcessImpl_md.c
+--- a/src/java.base/unix/native/libjava/ProcessImpl_md.c
++++ b/src/java.base/unix/native/libjava/ProcessImpl_md.c
+@@ -44,6 +44,10 @@
+ #include <signal.h>
+ #include <string.h>
+ 
+-#include <spawn.h>
++#ifdef __ANDROID__
++#include "posix_spawn.h"
++#else
++#include <spawn.h>
++#endif
+ 
+ #include "childproc.h"
 
