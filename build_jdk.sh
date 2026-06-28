@@ -157,17 +157,19 @@ if os.path.exists(toolchain_m4):
     changed = False
 
     # Revert BUILD_CC/BUILD_CXX lookup to prefer gcc (original behavior)
+    # Use replace_all=True because the patch creates two identical lines
+    # (macOS branch + else branch); the else branch is the one we need to fix.
     old_cc = 'UTIL_REQUIRE_PROGS(BUILD_CC, clang cc gcc)'
     new_cc = 'UTIL_REQUIRE_PROGS(BUILD_CC, cc gcc)'
     if old_cc in content:
-        content = content.replace(old_cc, new_cc, 1)
+        content = content.replace(old_cc, new_cc)
         changed = True
         print('[build_jdk] Reverted BUILD_CC lookup to "cc gcc" in ' + toolchain_m4)
 
     old_cxx = 'UTIL_REQUIRE_PROGS(BUILD_CXX, clang++ CC g++)'
     new_cxx = 'UTIL_REQUIRE_PROGS(BUILD_CXX, CC g++)'
     if old_cxx in content:
-        content = content.replace(old_cxx, new_cxx, 1)
+        content = content.replace(old_cxx, new_cxx)
         changed = True
         print('[build_jdk] Reverted BUILD_CXX lookup to "CC g++" in ' + toolchain_m4)
 
