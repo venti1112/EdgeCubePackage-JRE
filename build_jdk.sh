@@ -56,7 +56,6 @@ bash ./configure \
     --with-cups-include=$CUPS_DIR \
     --with-devkit=$TOOLCHAIN \
     --with-debug-level=$JDK_DEBUG_LEVEL \
-    --with-version-opt= \
     --with-fontconfig-include=$ANDROID_INCLUDE \
     --with-freetype-lib=$FREETYPE_DIR/lib \
     --with-freetype-include=$FREETYPE_DIR/include/freetype2 \
@@ -71,9 +70,9 @@ if [[ "$error_code" -ne 0 ]]; then
 fi
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-normal-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
-make JOBS=4 images || \
+make JOBS=4 images VERSION_OPT= || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "Build failure, exited with code $error_code. Trying again."
-  make JOBS=4 images
+  make JOBS=4 images VERSION_OPT=
 fi
