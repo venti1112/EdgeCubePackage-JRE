@@ -46,7 +46,34 @@ if [[ "$TARGET_JDK" == "x86" ]]; then
 fi
 
 # Disable GCC < 5 check on aarch64 (NDK r10e uses GCC 4.9, JDK-8360869)
-sed -i 's/.*as_fn_error.*GCC < 5 may incorrectly.*/: # skip GCC version check/' configure
+# sed alone is unreliable: the as_fn_error call may be in common/autoconf/generated-configure.sh
+# (the actual autoconf-generated script that `configure` sources) rather than in `configure`
+# itself, and the call may span multiple lines. Use Python to find and neutralize any line
+# containing the GCC < 5 error message in both files.
+python3 << 'PYEOF'
+import os
+
+for cfg_file in ['configure', 'common/autoconf/generated-configure.sh']:
+    if not os.path.exists(cfg_file):
+        continue
+    with open(cfg_file, 'r', errors='ignore') as f:
+        content = f.read()
+    if 'GCC < 5 may incorrectly' not in content:
+        continue
+    lines = content.split('\n')
+    new_lines = []
+    modified = 0
+    for line in lines:
+        if 'GCC < 5 may incorrectly' in line:
+            indent = line[:len(line) - len(line.lstrip())]
+            new_lines.append(indent + ': # GCC < 5 check disabled (NDK r10e GCC 4.9, JDK-8360869)')
+            modified += 1
+        else:
+            new_lines.append(line)
+    with open(cfg_file, 'w') as f:
+        f.write('\n'.join(new_lines))
+    print("[build_jdk] Disabled GCC < 5 check in " + cfg_file + " (" + str(modified) + " line(s))")
+PYEOF
 
 bash ./configure \
     --openjdk-target=$TARGET_PHYS \
@@ -73,6 +100,13 @@ if [[ "$error_code" -ne 0 ]]; then
 fi
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-normal-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
+
+# Clear VERSION_OPT in spec.gmk to remove "-internal" suffix from JAVA_RUNTIME_VERSION.
+# JDK 8 may store the "internal" marker in VERSION_BUILD, so clear that too if it matches.
+sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
+sed -i 's/^VERSION_BUILD[ ]*[:?+]*=.*internal.*/VERSION_BUILD :=/' spec.gmk
+echo "[build_jdk] Cleared VERSION_OPT/VERSION_BUILD in $(pwd)/spec.gmk"
+
 make JOBS=4 images VERSION_OPT= || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
