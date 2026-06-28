@@ -74,14 +74,13 @@ for f in src_files:
 #    check string so it is only applied once even if EXTRA_SRC is already present.
 build_fixes = [
     # (file, anchor_line, line_to_add, check_string)
-    ("make/lib/Lib-jdk.jdwp.agent.gmk",
-     "      libjdwp/export, \\",
-     "    EXTRA_SRC := java.base:libtinyiconv, \\",
-     "EXTRA_SRC := java.base:libtinyiconv"),
+    # Add EXTRA_SRC + CXXFLAGS to BUILD_LIBJDWP. The anchor "CFLAGS := ... -DJDWP_LOGGING"
+    # is unique to BUILD_LIBJDWP. Do NOT use "libjdwp/export" as anchor — it also appears
+    # in BUILD_LIBDT_SOCKET, and replace(..., 1) would match the wrong block.
     ("make/lib/Lib-jdk.jdwp.agent.gmk",
      "    CFLAGS := $(CFLAGS_JDKLIB) -DJDWP_LOGGING, \\",
-     "    CXXFLAGS := $(CXXFLAGS_JDKLIB), \\",
-     "CXXFLAGS := $(CXXFLAGS_JDKLIB)"),
+     "    EXTRA_SRC := java.base:libtinyiconv, \\\n    CXXFLAGS := $(CXXFLAGS_JDKLIB), \\",
+     "EXTRA_SRC := java.base:libtinyiconv"),
     ("make/lib/Lib-java.instrument.gmk",
      "    EXTRA_HEADER_DIRS := java.base:libjli, \\",
      "    EXTRA_SRC := java.base:libtinyiconv, \\",
