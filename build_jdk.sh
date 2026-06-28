@@ -133,16 +133,24 @@ __attribute__((noinline)) static void* get_libjvm_base() {
     void* jvm_base_ptr = get_libjvm_base();
     if (jvm_base_ptr != NULL) {
       uintptr_t jvm_base = (uintptr_t)jvm_base_ptr;
-      // Try 32MB below libjvm.so (well within +/-128MB B instruction range)
-      uintptr_t hint = (jvm_base > 32 * 1024 * 1024)
-          ? (jvm_base - 32 * 1024 * 1024) : jvm_base;
+      // Place CodeCache so its end is 16MB below libjvm.so (no overlap).
+      // 'bytes' is the allocation size (ReservedCodeCacheSize, typically 32MB
+      // on Android after disabling the x5 tiered compilation multiplier).
+      // With 32MB CodeCache: hint = jvm_base - 48MB, within +/-128MB range.
+      uintptr_t gap = 16 * 1024 * 1024;
+      uintptr_t hint = (jvm_base > bytes + gap)
+          ? (jvm_base - bytes - gap) : jvm_base;
       hint &= ~((uintptr_t)os::Linux::page_size() - 1); // page-align
       addr = (char*)::mmap((char*)hint, bytes, PROT_NONE, flags, -1, 0);
       if (addr != MAP_FAILED) {
         uintptr_t distance = (uintptr_t)addr > jvm_base
             ? (uintptr_t)addr - jvm_base
             : jvm_base - (uintptr_t)addr;
-        if (distance < 120 * 1024 * 1024) {
+        // Ensure farthest branch (end-to-end) is within 128MB.
+        // distance + bytes covers the above-libjvm case; for below-libjvm,
+        // actual max branch is distance + libjvm_size (~12MB), so this is
+        // conservative but safe for any CodeCache <= 88MB.
+        if (distance + bytes < 120 * 1024 * 1024) {
           if ((address)addr + bytes > _highest_vm_reserved_address) {
             _highest_vm_reserved_address = (address)addr + bytes;
           }
@@ -170,6 +178,34 @@ __attribute__((noinline)) static void* get_libjvm_base() {
             with open(filepath, 'w') as f:
                 f.write(content)
             print('[build_jdk] WARNING: mmap anchor not found, wrote helper only to ' + filepath)
+PYEOF
+fi
+
+# Fix: Prevent ReservedCodeCacheSize ×5 multiplier on Android.
+# JDK 8's tiered compilation increases CodeCache from 32MB to 160MB (capped ~128MB).
+# With 128MB CodeCache, it's impossible to place within ±128MB of libjvm.so
+# without overlapping. Keeping it at 32MB allows placement within branch range.
+if [[ "$TARGET_JDK" == "aarch64" ]]; then
+python3 << 'PYEOF'
+import os
+
+filepath = 'hotspot/src/share/vm/runtime/arguments.cpp'
+if not os.path.exists(filepath):
+    print('[build_jdk] WARNING: ' + filepath + ' not found')
+else:
+    with open(filepath, 'r') as f:
+        content = f.read()
+    old = 'FLAG_SET_DEFAULT(ReservedCodeCacheSize, ReservedCodeCacheSize * 5);'
+    new = '#ifndef __ANDROID__\n    FLAG_SET_DEFAULT(ReservedCodeCacheSize, ReservedCodeCacheSize * 5);\n#endif'
+    if '#ifndef __ANDROID__\n    FLAG_SET_DEFAULT(ReservedCodeCacheSize' in content:
+        print('[build_jdk] ReservedCodeCacheSize x5 multiplier already guarded in ' + filepath)
+    elif old in content:
+        content = content.replace(old, new, 1)
+        with open(filepath, 'w') as f:
+            f.write(content)
+        print('[build_jdk] Guarded ReservedCodeCacheSize x5 multiplier with __ANDROID__ in ' + filepath)
+    else:
+        print('[build_jdk] WARNING: ReservedCodeCacheSize x5 pattern not found in ' + filepath)
 PYEOF
 fi
 
