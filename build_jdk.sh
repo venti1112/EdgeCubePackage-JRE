@@ -131,8 +131,8 @@ if os.path.exists(gmk):
 memnode = 'src/hotspot/share/opto/memnode.cpp'
 if os.path.exists(memnode):
     content = open(memnode).read()
-    old = '  // if (ReduceFieldZeroing || ReduceBulkZeroing)\n     // reduce instruction count for common initialization patterns\n    // coalesce_subword_stores(header_size, size_in_bytes, phase);'
-    new = '#ifndef __ANDROID__\n  if (ReduceFieldZeroing || ReduceBulkZeroing)\n     // reduce instruction count for common initialization patterns\n    coalesce_subword_stores(header_size, size_in_bytes, phase);\n#endif'
+    old = '  // if (ReduceFieldZeroing || ReduceBulkZeroing)\n    // reduce instruction count for common initialization patterns\n    // coalesce_subword_stores(header_size, size_in_bytes, phase);'
+    new = '#ifndef __ANDROID__\n  if (ReduceFieldZeroing || ReduceBulkZeroing)\n    // reduce instruction count for common initialization patterns\n    coalesce_subword_stores(header_size, size_in_bytes, phase);\n#endif'
     if old in content:
         content = content.replace(old, new, 1)
         open(memnode, 'w').write(content)
