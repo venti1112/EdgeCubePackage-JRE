@@ -2468,7 +2468,20 @@ diff --git a/src/java.instrument/unix/native/libinstrument/EncodingSupport_md.c 
 index 490eea9a5..27ee1c23e 100644
 --- a/src/java.instrument/unix/native/libinstrument/EncodingSupport_md.c
 +++ b/src/java.instrument/unix/native/libinstrument/EncodingSupport_md.c
-@@ -65,7 +65,11 @@ utfInitialize(void)
+@@ -29,5 +29,12 @@
+ #include <ctype.h>
+ #include <locale.h>
+ #include <langinfo.h>
+ #include <iconv.h>
++#ifdef __ANDROID__
++/* Android Bionic only declares iconv functions for __ANDROID_API__ >= 28;
++   tinyiconv provides the implementation, but the declarations are missing. */
++extern iconv_t iconv_open(const char*, const char*);
++extern size_t iconv(iconv_t, char**, size_t*, char**, size_t*);
++extern int iconv_close(iconv_t);
++#endif
+ 
+@@ -65,7 +72,11 @@ utfInitialize(void)
      (void)setlocale(LC_ALL, "");
  
      /* Get the codeset name */
@@ -2484,7 +2497,21 @@ diff --git a/src/jdk.jdwp.agent/share/native/libjdwp/utf_util.c b/src/jdk.jdwp.a
 index f5573930d..b64e30046 100644
 --- a/src/jdk.jdwp.agent/share/native/libjdwp/utf_util.c
 +++ b/src/jdk.jdwp.agent/share/native/libjdwp/utf_util.c
-@@ -483,7 +483,11 @@ static int iconvConvert(conv_direction drn, char *bytes, size_t len, char *outpu
+@@ -448,6 +448,13 @@
+ // *NIX specific part
+ 
+ #include <iconv.h>
++#ifdef __ANDROID__
++/* Android Bionic only declares iconv functions for __ANDROID_API__ >= 28;
++   tinyiconv provides the implementation, but the declarations are missing. */
++extern iconv_t iconv_open(const char*, const char*);
++extern size_t iconv(iconv_t, char**, size_t*, char**, size_t*);
++extern int iconv_close(iconv_t);
++#endif
+ #include <locale.h>
+ #include <langinfo.h>
+ #include <string.h>
+@@ -483,7 +490,11 @@ static int iconvConvert(conv_direction drn, char *bytes, size_t len, char *outpu
          // locale is not initialized, do it now
          if (setlocale(LC_ALL, "") != NULL) {
              // nl_langinfo returns ANSI_X3.4-1968 by default
