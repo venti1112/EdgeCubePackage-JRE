@@ -46,9 +46,12 @@ git apply --reject --whitespace=fix ../patches/jdk11u_android.diff || echo "git 
 
 # Add iconv extern declarations for Android (tinyiconv provides the implementation
 # but Bionic only declares the functions for __ANDROID_API__ >= 28)
+# Also fix rejected patch hunks: add EXTRA_SRC for tinyiconv to libjdwp and libinstrument
 python3 << 'PYEOF'
 import os
-files = [
+
+# 1. Add iconv extern declarations to source files
+src_files = [
     "src/java.instrument/unix/native/libinstrument/EncodingSupport_md.c",
     "src/jdk.jdwp.agent/share/native/libjdwp/utf_util.c",
 ]
@@ -58,12 +61,33 @@ extern size_t iconv(iconv_t, char**, size_t*, char**, size_t*);
 extern int iconv_close(iconv_t);
 #endif
 """
-for f in files:
+for f in src_files:
     if os.path.exists(f) and "extern iconv_t iconv_open" not in open(f).read():
         content = open(f).read()
         content = content.replace("#include <iconv.h>\n", "#include <iconv.h>\n" + decl, 1)
         open(f, "w").write(content)
         print("[build_jdk] Added iconv extern declarations to " + f)
+
+# 2. Fix rejected patch hunks: add EXTRA_SRC + CXXFLAGS to build files
+#    The patch hunks for Lib-jdk.jdwp.agent.gmk and Lib-java.instrument.gmk
+#    may be rejected due to context line mismatches.
+build_fixes = [
+    ("make/lib/Lib-jdk.jdwp.agent.gmk",
+     "      libjdwp/export, \\",
+     "    EXTRA_SRC := java.base:libtinyiconv, \\"),
+    ("make/lib/Lib-java.instrument.gmk",
+     "    EXTRA_HEADER_DIRS := java.base:libjli, \\",
+     "    EXTRA_SRC := java.base:libtinyiconv, \\"),
+]
+for gmk, anchor, line in build_fixes:
+    if os.path.exists(gmk) and "libtinyiconv" not in open(gmk).read():
+        content = open(gmk).read()
+        if anchor in content:
+            content = content.replace(anchor, anchor + "\n" + line, 1)
+            open(gmk, "w").write(content)
+            print("[build_jdk] Added EXTRA_SRC to " + gmk)
+        else:
+            print("[build_jdk] WARNING: anchor not found in " + gmk)
 PYEOF
 
 bash ./configure \
