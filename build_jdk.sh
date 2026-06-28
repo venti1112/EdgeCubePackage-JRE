@@ -89,6 +89,7 @@ bash ./configure \
     --with-fontconfig-include=$ANDROID_INCLUDE \
     --with-freetype-lib=$FREETYPE_DIR/lib \
     --with-freetype-include=$FREETYPE_DIR/include/freetype2 \
+    --with-milestone=fcs \
     $AUTOCONF_x11arg $AUTOCONF_EXTRA_ARGS \
     --x-libraries=/usr/lib \
         $platform_args || \
@@ -101,15 +102,15 @@ fi
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-normal-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
 
-# Clear VERSION_OPT in spec.gmk to remove "-internal" suffix from JAVA_RUNTIME_VERSION.
-# JDK 8 may store the "internal" marker in VERSION_BUILD, so clear that too if it matches.
-sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
-sed -i 's/^VERSION_BUILD[ ]*[:?+]*=.*internal.*/VERSION_BUILD :=/' spec.gmk
-echo "[build_jdk] Cleared VERSION_OPT/VERSION_BUILD in $(pwd)/spec.gmk"
+# Set MILESTONE=fcs in spec.gmk as a backup in case --with-milestone=fcs was
+# not applied. JDK 8 uses MILESTONE (not VERSION_PRE/VERSION_OPT). The "fcs"
+# value is special-cased in spec.gmk.in to drop the milestone from RELEASE.
+sed -i 's/^MILESTONE[ ]*[:?+]*=.*/MILESTONE := fcs/' spec.gmk
+echo "[build_jdk] Set MILESTONE=fcs in $(pwd)/spec.gmk"
 
-make JOBS=4 images VERSION_OPT= || \
+make JOBS=4 images || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "Build failure, exited with code $error_code. Trying again."
-  make JOBS=4 images VERSION_OPT=
+  make JOBS=4 images
 fi
