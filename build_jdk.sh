@@ -70,24 +70,37 @@ for f in src_files:
 
 # 2. Fix rejected patch hunks: add EXTRA_SRC + CXXFLAGS to build files
 #    The patch hunks for Lib-jdk.jdwp.agent.gmk and Lib-java.instrument.gmk
-#    may be rejected due to context line mismatches.
+#    may be rejected due to context line mismatches. Each fix uses its own
+#    check string so it is only applied once even if EXTRA_SRC is already present.
 build_fixes = [
+    # (file, anchor_line, line_to_add, check_string)
     ("make/lib/Lib-jdk.jdwp.agent.gmk",
      "      libjdwp/export, \\",
-     "    EXTRA_SRC := java.base:libtinyiconv, \\"),
+     "    EXTRA_SRC := java.base:libtinyiconv, \\",
+     "EXTRA_SRC := java.base:libtinyiconv"),
+    ("make/lib/Lib-jdk.jdwp.agent.gmk",
+     "    CFLAGS := $(CFLAGS_JDKLIB) -DJDWP_LOGGING, \\",
+     "    CXXFLAGS := $(CXXFLAGS_JDKLIB), \\",
+     "CXXFLAGS := $(CXXFLAGS_JDKLIB)"),
     ("make/lib/Lib-java.instrument.gmk",
      "    EXTRA_HEADER_DIRS := java.base:libjli, \\",
-     "    EXTRA_SRC := java.base:libtinyiconv, \\"),
+     "    EXTRA_SRC := java.base:libtinyiconv, \\",
+     "EXTRA_SRC := java.base:libtinyiconv"),
+    ("make/lib/Lib-java.instrument.gmk",
+     "    CFLAGS := $(CFLAGS_JDKLIB) $(LIBINSTRUMENT_CFLAGS), \\",
+     "    CXXFLAGS := $(CXXFLAGS_JDKLIB), \\",
+     "CXXFLAGS := $(CXXFLAGS_JDKLIB)"),
 ]
-for gmk, anchor, line in build_fixes:
-    if os.path.exists(gmk) and "libtinyiconv" not in open(gmk).read():
+for gmk, anchor, line, check in build_fixes:
+    if os.path.exists(gmk):
         content = open(gmk).read()
-        if anchor in content:
-            content = content.replace(anchor, anchor + "\n" + line, 1)
-            open(gmk, "w").write(content)
-            print("[build_jdk] Added EXTRA_SRC to " + gmk)
-        else:
-            print("[build_jdk] WARNING: anchor not found in " + gmk)
+        if check not in content:
+            if anchor in content:
+                content = content.replace(anchor, anchor + "\n" + line, 1)
+                open(gmk, "w").write(content)
+                print("[build_jdk] Added to " + gmk + ": " + line.strip())
+            else:
+                print("[build_jdk] WARNING: anchor not found in " + gmk + ": " + anchor.strip())
 PYEOF
 
 bash ./configure \
@@ -106,7 +119,6 @@ bash ./configure \
     --with-devkit=$TOOLCHAIN \
     --with-native-debug-symbols=external \
     --with-debug-level=$JDK_DEBUG_LEVEL \
-    --with-version-opt= \
     --with-fontconfig-include=$ANDROID_INCLUDE \
     $AUTOCONF_x11arg $AUTOCONF_EXTRA_ARGS \
     --x-libraries=/usr/lib \
@@ -121,9 +133,14 @@ fi
 jobs=4
 
 cd build/${JVM_PLATFORM}-${TARGET_JDK}-normal-${JVM_VARIANTS}-${JDK_DEBUG_LEVEL}
-make JOBS=$jobs images || \
+
+# Clear VERSION_OPT in spec.gmk to remove "-internal" suffix from JAVA_RUNTIME_VERSION.
+sed -i 's/^VERSION_OPT[ ]*[:?+]*=.*/VERSION_OPT :=/' spec.gmk
+echo "[build_jdk] Cleared VERSION_OPT in $(pwd)/spec.gmk"
+
+make JOBS=$jobs images VERSION_OPT= || \
 error_code=$?
 if [[ "$error_code" -ne 0 ]]; then
   echo "Build failure, exited with code $error_code. Trying again."
-  make JOBS=$jobs images
+  make JOBS=$jobs images VERSION_OPT=
 fi
