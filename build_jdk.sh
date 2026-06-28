@@ -58,6 +58,7 @@ bash ./configure \
     --with-devkit=$TOOLCHAIN \
     --with-native-debug-symbols=external \
     --with-debug-level=$JDK_DEBUG_LEVEL \
+    --with-version-opt= \
     --with-fontconfig-include=$ANDROID_INCLUDE \
     $AUTOCONF_x11arg $AUTOCONF_EXTRA_ARGS \
     --x-libraries=/usr/lib \
