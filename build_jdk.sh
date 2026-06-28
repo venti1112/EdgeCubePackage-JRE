@@ -26,7 +26,10 @@ platform_args="--with-toolchain-type=gcc \
 AUTOCONF_x11arg="--x-includes=$ANDROID_INCLUDE/X11"
 
 export BOOT_JDK=$PWD/jdk-10.0.2
-export CFLAGS+=" -DANDROID"
+# Note: -DANDROID is NOT needed here. The patch defines ANDROID from __ANDROID__
+# (auto-defined by NDK) in globalDefinitions_gcc.hpp. Adding -DANDROID here
+# would also define it for the build JDK (compiled for linux-amd64 host),
+# activating Android-specific code paths in the build JDK and causing crashes.
 export LDFLAGS+=" -L$PWD/dummy_libs"
 
 # Create dummy libraries so we won't have to remove them in OpenJDK makefiles
@@ -122,6 +125,25 @@ if os.path.exists(gmk):
                 print('[build_jdk] WARNING: BUILD_LIBDT_SOCKET anchor not found in ' + gmk)
         else:
             print('[build_jdk] BUILD_LIBDT_SOCKET already has CXXFLAGS in ' + gmk)
+
+# 4. Guard coalesce_subword_stores disable with __ANDROID__ so the build JDK
+#    (compiled for linux-amd64 host) keeps the original code. The Android patch
+#    unconditionally comments out this C2 optimization, but it affects the build
+#    JDK too, causing incorrect object initialization → SIGSEGV in
+#    ObjectSynchronizer::inflate during jmod creation.
+memnode = 'src/hotspot/share/opto/memnode.cpp'
+if os.path.exists(memnode):
+    content = open(memnode).read()
+    old = '  // if (ReduceFieldZeroing || ReduceBulkZeroing)\n     // reduce instruction count for common initialization patterns\n    // coalesce_subword_stores(header_size, size_in_bytes, phase);'
+    new = '#ifndef __ANDROID__\n  if (ReduceFieldZeroing || ReduceBulkZeroing)\n     // reduce instruction count for common initialization patterns\n    coalesce_subword_stores(header_size, size_in_bytes, phase);\n#endif'
+    if old in content:
+        content = content.replace(old, new, 1)
+        open(memnode, 'w').write(content)
+        print('[build_jdk] Guarded coalesce_subword_stores disable with __ANDROID__ in ' + memnode)
+    elif '#ifndef __ANDROID__\n  if (ReduceFieldZeroing || ReduceBulkZeroing)' in content:
+        print('[build_jdk] coalesce_subword_stores already guarded in ' + memnode)
+    else:
+        print('[build_jdk] WARNING: coalesce_subword_stores pattern not found in ' + memnode)
 PYEOF
 
 bash ./configure \
