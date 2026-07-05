@@ -55,7 +55,7 @@ jobs:
   build_android:
     strategy:
       matrix:
-        arch: [ "aarch32", "aarch64", "x86", "x86_64" ]
+        arch: [ "aarch32", "aarch64", "x86_64" ]
       fail-fast: false
 
     name: "Build for Android ${{matrix.arch}}"
@@ -96,12 +96,6 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: jre17-aarch64
-        path: fcl
-
-    - name: Get jre17-x86
-      uses: actions/download-artifact@v4
-      with:
-        name: jre17-x86
         path: fcl
 
     - name: Get jre17-x86_64
