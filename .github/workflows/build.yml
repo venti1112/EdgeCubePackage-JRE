@@ -73,7 +73,7 @@ jobs:
         name: 'jre25-${{matrix.arch}}'
         path: jre25*.tar.xz
 
-  fcl:
+  package:
     needs: build_android
     runs-on: ubuntu-latest
     steps:
@@ -114,12 +114,6 @@ jobs:
         ECPKG_REPOSITORY: ${{ inputs.repository }}
         ECPKG_UPDATE_URL: ${{ inputs.update-url }}
         ECPKG_MIN_APP_VERSION: ${{ inputs.min-app-version }}
-
-    - name: Upload multiarch artifact
-      uses: actions/upload-artifact@v4
-      with:
-          name: jre25-multiarch
-          path: fcl/jre25-multiarch/*
 
     - name: Upload ecpkg packages
       uses: actions/upload-artifact@v4
