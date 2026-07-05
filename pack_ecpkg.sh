@@ -25,6 +25,7 @@
 #   ECPKG_AUTHOR          package author (default: EdgeCube)
 #   ECPKG_HOMEPAGE        homepage URL (default: https://openjdk.org/)
 #   ECPKG_REPOSITORY      repository URL
+#   ECPKG_UPDATE_URL      update check URL (optional)
 #   ECPKG_MIN_APP_VERSION minimum EdgeCube versionCode (default: 6)
 #   ECPKG_DESCRIPTION     package description
 set -euo pipefail
@@ -39,6 +40,7 @@ ECPKG_HOMEPAGE="${ECPKG_HOMEPAGE:-https://openjdk.org/}"
 ECPKG_REPOSITORY="${ECPKG_REPOSITORY:-https://github.com/venti1112/EdgeCubePackage-JRE}"
 ECPKG_MIN_APP_VERSION="${ECPKG_MIN_APP_VERSION:-6}"
 ECPKG_DESCRIPTION="${ECPKG_DESCRIPTION:-OpenJDK 25 runtime for EdgeCube.}"
+ECPKG_UPDATE_URL="${ECPKG_UPDATE_URL:-}"
 
 INPUT_DIR="${1:-${ECPKG_INPUT_DIR:-$PWD}}"
 OUTPUT_DIR="${2:-${ECPKG_OUTPUT_DIR:-$INPUT_DIR/ecpkg}}"
@@ -105,7 +107,7 @@ write_manifest() {
   shift 2
   local arch_dirs=("$@")
 
-  local version_json version_name_json name_json desc_json author_json homepage_json repository_json
+  local version_json version_name_json name_json desc_json author_json homepage_json repository_json update_url_json
   version_json="$(json_escape "$VERSION")"
   if [[ -n "$ECPKG_VERSION_NAME" ]]; then
     version_name_json="$(json_escape "$ECPKG_VERSION_NAME")"
@@ -117,6 +119,7 @@ write_manifest() {
   author_json="$(json_escape "$ECPKG_AUTHOR")"
   homepage_json="$(json_escape "$ECPKG_HOMEPAGE")"
   repository_json="$(json_escape "$ECPKG_REPOSITORY")"
+  update_url_json="$(json_escape "$ECPKG_UPDATE_URL")"
 
   {
     cat <<EOF
@@ -132,6 +135,10 @@ write_manifest() {
   "homepage": "$homepage_json",
   "repository": "$repository_json",
 EOF
+
+    if [[ -n "$ECPKG_UPDATE_URL" ]]; then
+      printf '  "updateUrl": "%s",\n' "$update_url_json"
+    fi
 
     if [[ -n "$universal_dir" ]]; then
       printf '  "universalDir": "%s",\n' "$universal_dir"
