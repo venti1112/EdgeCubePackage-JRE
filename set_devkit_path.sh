@@ -12,7 +12,7 @@ fi
 
 if [[ "$TARGET_JDK" == "aarch64" ]]
 then
-  export TARGET_SHORT=arm64
+  export TARGET_SHORT=aarch64
 else
   export TARGET_SHORT=$TARGET_JDK
 fi
