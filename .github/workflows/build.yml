@@ -73,7 +73,7 @@ jobs:
         name: 'jre21-${{matrix.arch}}'
         path: jre21*.tar.xz
 
-  fcl:
+  package:
     needs: build_android
     runs-on: ubuntu-22.04
     steps:
@@ -120,12 +120,6 @@ jobs:
         ECPKG_REPOSITORY: ${{ inputs.repository }}
         ECPKG_UPDATE_URL: ${{ inputs.update-url }}
         ECPKG_MIN_APP_VERSION: ${{ inputs.min-app-version }}
-
-    - name: Upload multiarch artifact
-      uses: actions/upload-artifact@v4
-      with:
-          name: jre21-multiarch
-          path: fcl/jre21-multiarch/*
 
     - name: Upload ecpkg packages
       uses: actions/upload-artifact@v4
