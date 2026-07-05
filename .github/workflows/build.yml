@@ -1,9 +1,36 @@
 name: Build OpenJDK 21 for Android
 
 on:
-  push:
-  pull_request:
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Build number (integer)'
+        required: true
+        default: 1
+        type: number
+      version-name:
+        description: 'Display version (e.g., 21.0.1+12)'
+        required: false
+        type: string
+      ecpkg-id:
+        description: 'Package ID (e.g., jre21)'
+        required: false
+        default: jre21
+        type: string
+      ecpkg-name:
+        description: 'Display name (e.g., OpenJDK 21)'
+        required: false
+        default: 'OpenJDK 21'
+        type: string
+      description:
+        description: 'Package description'
+        required: false
+        type: string
+      min-app-version:
+        description: 'Minimum EdgeCube app version'
+        required: false
+        default: 15
+        type: number
 
 jobs:
   build_android:
@@ -63,6 +90,13 @@ jobs:
 
     - name: Pack ecpkg
       run: bash "pack_ecpkg.sh" $GITHUB_WORKSPACE/fcl/jre21-multiarch $GITHUB_WORKSPACE/fcl/jre21-ecpkg
+      env:
+        ECPKG_VERSION: ${{ inputs.version }}
+        ECPKG_VERSION_NAME: ${{ inputs.version-name }}
+        ECPKG_ID: ${{ inputs.ecpkg-id }}
+        ECPKG_NAME: ${{ inputs.ecpkg-name }}
+        ECPKG_DESCRIPTION: ${{ inputs.description }}
+        ECPKG_MIN_APP_VERSION: ${{ inputs.min-app-version }}
 
     - name: Upload multiarch artifact
       uses: actions/upload-artifact@v4
