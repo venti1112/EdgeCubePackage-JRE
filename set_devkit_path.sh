@@ -10,12 +10,10 @@ then
   export JDK_DEBUG_LEVEL=release
 fi
 
-if [[ "$TARGET_JDK" == "aarch64" ]]
-then
-  export TARGET_SHORT=aarch64
-else
-  export TARGET_SHORT=$TARGET_JDK
-fi
+case "$TARGET_JDK" in
+  aarch64) export TARGET_SHORT=arm64 ;;
+  *)       export TARGET_SHORT=$TARGET_JDK ;;
+esac
 
 if [[ -z "$JVM_VARIANTS" ]]
 then
