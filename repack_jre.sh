@@ -47,7 +47,7 @@ makearch () {
 makeuni () {
   echo "Making universal...";
   cd "$work";
-  tar xf $(find "$in" -name jre17-arm64-*release.tar.xz) > /dev/null 2>&1;
+  tar xf $(find "$in" -name jre17-aarch64-*release.tar.xz) > /dev/null 2>&1;
   
   rm -rf bin;
   rm -rf lib/server;
@@ -63,7 +63,7 @@ makeuni () {
 # now time to use them!
 makeuni
 makearch aarch32 arm
-makearch aarch64 arm64
+makearch aarch64 aarch64
 makearch i386 x86
 makearch amd64 x86_64
 

@@ -6,18 +6,20 @@
 # (universal.tar.xz + bin-<arch>.tar.xz) produced by repack_jre.sh and
 # produces EdgeCube-importable .ecpkg files:
 #
-#   <id>-arm64.ecpkg    single-arch (universal merged into arch dir)
+#   <id>-aarch64.ecpkg  single-arch (universal merged into arch dir)
 #   <id>-arm.ecpkg      single-arch
 #   <id>-x86_64.ecpkg   single-arch
 #   <id>-multi.ecpkg    multi-arch (universal/ + per-arch dirs)
 #
-# The ecpkg spec only supports arm64, arm, x86_64 — NOT x86. The x86
+# The ecpkg spec only supports aarch64, arm, x86_64 — NOT x86. The x86
 # tarball from repack_jre.sh is ignored here.
 #
 # Usage:
 #   ./pack_ecpkg.sh [input_dir] [output_dir]
 #
 # Environment overrides:
+#   ECPKG_VERSION         build number (integer) in manifest (default: 1)
+#   ECPKG_VERSION_NAME    display version string (default: auto-detected from JDK)
 #   ECPKG_ID              runtime id in manifest (default: jre17)
 #   ECPKG_NAME            display name (default: OpenJDK 17)
 #   ECPKG_AUTHOR          package author (default: EdgeCube)
@@ -28,6 +30,8 @@
 set -euo pipefail
 
 # ── Configuration ─────────────────────────────────────────────────────────
+ECPKG_VERSION="${ECPKG_VERSION:-1}"
+ECPKG_VERSION_NAME="${ECPKG_VERSION_NAME:-}"
 ECPKG_ID="${ECPKG_ID:-jre17}"
 ECPKG_NAME="${ECPKG_NAME:-OpenJDK 17}"
 ECPKG_AUTHOR="${ECPKG_AUTHOR:-EdgeCube}"
@@ -39,13 +43,21 @@ ECPKG_DESCRIPTION="${ECPKG_DESCRIPTION:-OpenJDK 17 runtime for EdgeCube.}"
 INPUT_DIR="${1:-${ECPKG_INPUT_DIR:-$PWD}}"
 OUTPUT_DIR="${2:-${ECPKG_OUTPUT_DIR:-$INPUT_DIR/ecpkg}}"
 
-# ecpkg-supported archs (must match ecpkg-spec §8). These map 1:1 to the
-# bin-<arch>.tar.xz names produced by repack_jre.sh.
-ARCHS=(arm64 arm x86_64)
+# ecpkg-supported archs. ARCH_DIRS maps 1:1 to bin-<name>.tar.xz produced by
+# repack_jre.sh. ARCH_KEYS are the manifest keys (must match EcPackage.pickArchDir).
+ARCH_DIRS=(aarch64 arm x86_64)
+declare -A ARCH_KEY_MAP
+ARCH_KEY_MAP[aarch64]=aarch64
+ARCH_KEY_MAP[arm]=arm
+ARCH_KEY_MAP[x86_64]=x86_64
 
 # ── Validation ────────────────────────────────────────────────────────────
 [[ "$ECPKG_ID" =~ ^[A-Za-z0-9._-]+$ && "$ECPKG_ID" != .* ]] || {
   echo "error: ECPKG_ID must match ^[A-Za-z0-9._-]+$ and must not start with '.'" >&2
+  exit 1
+}
+[[ "$ECPKG_VERSION" =~ ^[0-9]+$ ]] || {
+  echo "error: ECPKG_VERSION must be an integer" >&2
   exit 1
 }
 [[ "$ECPKG_MIN_APP_VERSION" =~ ^[0-9]+$ ]] || {
@@ -62,9 +74,9 @@ OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd)"
   echo "   Hint: run repack_jre.sh first to produce split tarballs." >&2
   exit 1
 }
-for arch in "${ARCHS[@]}"; do
-  [[ -f "$INPUT_DIR/bin-$arch.tar.xz" ]] || {
-    echo "error: bin-$arch.tar.xz not found in $INPUT_DIR" >&2
+for arch_dir in "${ARCH_DIRS[@]}"; do
+  [[ -f "$INPUT_DIR/bin-$arch_dir.tar.xz" ]] || {
+    echo "error: bin-$arch_dir.tar.xz not found in $INPUT_DIR" >&2
     exit 1
   }
 done
@@ -81,18 +93,25 @@ json_escape() {
 
 # ── Helper: write edgecube-package.json manifest ──────────────────────────
 #
-# write_manifest <manifest_path> <universal_dir|""> <arch> [<arch> ...]
+# write_manifest <manifest_path> <universal_dir|""> <arch_dir> [<arch_dir> ...]
 #
+# Each arch_dir is used as the directory name in the archive and is mapped
+# to the EcPackage.pickArchDir lookup key via ARCH_KEY_MAP.
 # When universal_dir is empty, no universalDir field is written (single-arch
 # packages where universal files are merged into the arch directory).
 write_manifest() {
   local manifest="$1"
   local universal_dir="$2"
   shift 2
-  local archs=("$@")
+  local arch_dirs=("$@")
 
-  local version_json name_json desc_json author_json homepage_json repository_json
+  local version_json version_name_json name_json desc_json author_json homepage_json repository_json
   version_json="$(json_escape "$VERSION")"
+  if [[ -n "$ECPKG_VERSION_NAME" ]]; then
+    version_name_json="$(json_escape "$ECPKG_VERSION_NAME")"
+  else
+    version_name_json="$version_json"
+  fi
   name_json="$(json_escape "$ECPKG_NAME")"
   desc_json="$(json_escape "$ECPKG_DESCRIPTION")"
   author_json="$(json_escape "$ECPKG_AUTHOR")"
@@ -106,7 +125,8 @@ write_manifest() {
   "type": "jre",
   "id": "$ECPKG_ID",
   "name": "$name_json",
-  "version": "$version_json",
+  "version": $ECPKG_VERSION,
+  "versionName": "$version_name_json",
   "description": "$desc_json",
   "author": "$author_json",
   "homepage": "$homepage_json",
@@ -121,11 +141,12 @@ EOF
   "arch": {
 EOF
 
-    for i in "${!archs[@]}"; do
-      local arch="${archs[$i]}"
+    for i in "${!arch_dirs[@]}"; do
+      local dir="${arch_dirs[$i]}"
+      local key="${ARCH_KEY_MAP[$dir]}"
       local comma=","
-      [ "$i" -eq $((${#archs[@]} - 1)) ] && comma=""
-      printf '    "%s": { "dir": "%s" }%s\n' "$arch" "$arch" "$comma"
+      [ "$i" -eq $((${#arch_dirs[@]} - 1)) ] && comma=""
+      printf '    "%s": { "dir": "%s" }%s\n' "$key" "$dir" "$comma"
     done
 
     cat <<EOF
@@ -191,23 +212,23 @@ mkdir -p "$STAGING/multi/universal"
 echo ">>> extracting universal.tar.xz"
 tar xJf "$INPUT_DIR/universal.tar.xz" -C "$STAGING/multi/universal"
 
-for arch in "${ARCHS[@]}"; do
-  echo ">>> extracting bin-$arch.tar.xz"
+for arch_dir in "${ARCH_DIRS[@]}"; do
+  echo ">>> extracting bin-$arch_dir.tar.xz"
 
   # Multi-arch staging: arch files go into <arch>/ (universal is separate)
-  mkdir -p "$STAGING/multi/$arch"
-  tar xJf "$INPUT_DIR/bin-$arch.tar.xz" -C "$STAGING/multi/$arch"
+  mkdir -p "$STAGING/multi/$arch_dir"
+  tar xJf "$INPUT_DIR/bin-$arch_dir.tar.xz" -C "$STAGING/multi/$arch_dir"
 
   # Single-arch staging: merge universal + arch into one <arch>/ directory
-  mkdir -p "$STAGING/single-$arch/$arch"
-  cp -a "$STAGING/multi/universal/." "$STAGING/single-$arch/$arch/"
-  tar xJf "$INPUT_DIR/bin-$arch.tar.xz" -C "$STAGING/single-$arch/$arch"
+  mkdir -p "$STAGING/single-$arch_dir/$arch_dir"
+  cp -a "$STAGING/multi/universal/." "$STAGING/single-$arch_dir/$arch_dir/"
+  tar xJf "$INPUT_DIR/bin-$arch_dir.tar.xz" -C "$STAGING/single-$arch_dir/$arch_dir"
 done
 
 # ── 2. Extract JDK version from the release file ─────────────────────────
 # The release file is inside bin-<arch>.tar.xz (put there by repack_jre.sh's
 # makearch function). It contains JAVA_VERSION="21.0.1+12" etc.
-RELEASE_FILE="$STAGING/multi/arm64/release"
+RELEASE_FILE="$STAGING/multi/aarch64/release"
 if [[ ! -f "$RELEASE_FILE" ]]; then
   RELEASE_FILE="$STAGING/multi/x86_64/release"
 fi
@@ -225,17 +246,17 @@ echo "    version = $VERSION"
 # Each single-arch package has the complete JRE (universal + arch) merged
 # into one directory. No universalDir in the manifest.
 mkdir -p "$OUTPUT_DIR"
-for arch in "${ARCHS[@]}"; do
-  write_manifest "$STAGING/single-$arch/edgecube-package.json" "" "$arch"
-  zip_dir "$STAGING/single-$arch" "$OUTPUT_DIR/${ECPKG_ID}-${arch}.ecpkg"
-  echo "    -> $OUTPUT_DIR/${ECPKG_ID}-${arch}.ecpkg"
+for arch_dir in "${ARCH_DIRS[@]}"; do
+  write_manifest "$STAGING/single-$arch_dir/edgecube-package.json" "" "$arch_dir"
+  zip_dir "$STAGING/single-$arch_dir" "$OUTPUT_DIR/${ECPKG_ID}-${arch_dir}.ecpkg"
+  echo "    -> $OUTPUT_DIR/${ECPKG_ID}-${arch_dir}.ecpkg"
 done
 
 # ── 4. Create multi-arch .ecpkg package ───────────────────────────────────
 # The multi-arch package has universal/ + per-arch directories. The manifest
 # declares universalDir so EdgeCube extracts universal first, then the
 # device's arch directory on top.
-write_manifest "$STAGING/multi/edgecube-package.json" "universal" "${ARCHS[@]}"
+write_manifest "$STAGING/multi/edgecube-package.json" "universal" "${ARCH_DIRS[@]}"
 zip_dir "$STAGING/multi" "$OUTPUT_DIR/${ECPKG_ID}-multi.ecpkg"
 echo "    -> $OUTPUT_DIR/${ECPKG_ID}-multi.ecpkg"
 
@@ -243,6 +264,6 @@ echo "    -> $OUTPUT_DIR/${ECPKG_ID}-multi.ecpkg"
 rm -rf "$STAGING"
 
 echo ""
-echo "done. version=$VERSION  archs=${ARCHS[*]}"
+echo "done. version=$VERSION  archs=${ARCH_DIRS[*]}"
 echo "packages: $OUTPUT_DIR"
 echo "import ${ECPKG_ID}-<arch>.ecpkg or ${ECPKG_ID}-multi.ecpkg from EdgeCube's runtime page."
